@@ -1,3 +1,16 @@
+This is a fork of meagar's himama-dl project which is discontinued and no longer seems to be handling Pull Requests with fixes.
+
+This project will attempt to continue maintaining this useful bulk downloader for your child's profile media from childcare portals that use HiMama or its parent/successor Lillio.  This project begins with 42cornflakes' pending PR resolving a csrf token format change.
+
+Thanks to meagar for building and maintaining this project for as long as he did and others' previous efforts at maintaining it through Lillio changes.  It has made keeping important memories from our childrens' development easier since Lillio has never seemed to offer a data export/takeout feature.
+
+Original project github:
+https://github.com/meagar/himama-dl
+
+Original project README.md:
+
+---
+
 # Known to be broken. Accepting PRs.
 
 This worked for me two years ago when my oldest child left daycare, and I haven't touched it since. It scrapes the HiMama website and as their site changes, it will break. My youngest is now leaving daycare so I'll put a fixed version up in coming weeks, and then I'll have no opportunity to work on it further.
