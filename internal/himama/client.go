@@ -12,15 +12,16 @@ import (
 	"golang.org/x/net/html"
 )
 
-const Host = "www.himama.com"
-const BaseURL = "https://" + Host
+const DefaultHost = "www.himama.com" // default original host
+const BaseURL = "https://" + DefaultHost
 const LoginURL = BaseURL + "/login"
 
 type Client struct {
 	client *http.Client
+	Hostname string
 }
 
-func NewClient(username, password string) (*Client, error) {
+func NewClient(username, password, hostname string) (*Client, error) {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		return nil, fmt.Errorf("unable to initialize cookie jar: %w", err)
@@ -29,21 +30,34 @@ func NewClient(username, password string) (*Client, error) {
 	client := http.Client{
 		Jar: jar,
 	}
-
-	if csrfToken, err := getLoginForm(&client); err != nil {
+	
+	// Use Lillio/Himama tenant URL if provided; otherwise use LoginURL default
+	loginUrlToUse, err := determineLoginUrlToUse(hostname)
+	if err != nil {
+		return nil, fmt.Errorf("unable to determine login URL to use - loginUrlToUse: %s , error: %w", loginUrlToUse, err)
+	}
+	
+	if csrfToken, err := getLoginForm(&client, loginUrlToUse); err != nil {
 		return nil, err
-	} else if err := postLoginForm(&client, csrfToken, username, password); err != nil {
+	} else if err := postLoginForm(&client, csrfToken, username, password, loginUrlToUse); err != nil {
 		return nil, err
 	}
 
 	return &Client{
 		client: &client,
+		// Use Lillio/Himama tenant URL if provided instead of BaseURL later
+		Hostname: hostname,
 	}, nil
 }
 
 func (c *Client) FetchChildren() ([]Child, error) {
+	baseUrlToUse, err := determineBaseUrlToUse(c.Hostname)
+		if err != nil {
+		return nil, fmt.Errorf("unable to determine base URL to use - baseUrlToUse: %s , error: %w", baseUrlToUse, err)
+	}
+	
 	re := regexp.MustCompile(`^/accounts/\d+$`)
-	res, err := c.client.Get(BaseURL + "/headlines")
+	res, err := c.client.Get(baseUrlToUse + "/headlines")
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch children: %w", err)
 	}
@@ -89,7 +103,12 @@ func (c *Client) Activities(child Child, page int) ([]Activity, error) {
 
 	results := []Activity{}
 
-	url := fmt.Sprintf("%s/accounts/%s/activities?page=%d", BaseURL, child.ID, page)
+	baseUrlToUse, err := determineBaseUrlToUse(c.Hostname)
+		if err != nil {
+		return nil, fmt.Errorf("unable to determine base URL to use - baseUrlToUse: %s , error: %w", baseUrlToUse, err)
+	}
+
+	url := fmt.Sprintf("%s/accounts/%s/activities?page=%d", baseUrlToUse, child.ID, page)
 	res, err := c.client.Get(url)
 	if err != nil {
 		return nil, err
@@ -138,30 +157,30 @@ func (c *Client) Activities(child Child, page int) ([]Activity, error) {
 }
 
 // getLoginForm fetches the login form, decorates client (via its cookiejar) with a session cookie,
-// and extacts the csrf-token from the response body so it can be used in postLoginForm to submit credentials
-func getLoginForm(client *http.Client) (csrfToken []byte, err error) {
+// and extracts the csrf-token from the response body so it can be used in postLoginForm to submit credentials
+func getLoginForm(client *http.Client, loginUrlToUse string) (csrfToken []byte, err error) {
 	// First, fetch the login form so we can extract the cookie and authenticity token
-	res, err := client.Get(LoginURL)
+	res, err := client.Get(loginUrlToUse)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get %s: %w", LoginURL, err)
+		return nil, fmt.Errorf("unable to get %s: %w", loginUrlToUse, err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("GET %s: Unxpected response %d (want 200)", LoginURL, res.StatusCode)
+		return nil, fmt.Errorf("GET %s: Unxpected response %d (want 200)", loginUrlToUse, res.StatusCode)
 	}
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, fmt.Errorf("GET %s: Failed reading response body: %w", LoginURL, err)
+		return nil, fmt.Errorf("GET %s: Failed reading response body: %w", loginUrlToUse, err)
 	}
 
 	// TODO: Using regex to parse HTML? Why not.
 	re := regexp.MustCompile(`<meta name=csrf-token content=([a-zA-Z0-9\/+_-]+) *\/>`)
 	match := re.FindSubmatch(body)
 	if len(match) != 2 {
-		//return nil, fmt.Errorf("GET %s in %s: Cannot find authenticity token in response", LoginURL, body)
-		return nil, fmt.Errorf("GET %s: Cannot find authenticity token in response", LoginURL)
+		//return nil, fmt.Errorf("GET %s in %s: Cannot find authenticity token in response", loginUrlToUse, body)
+		return nil, fmt.Errorf("GET %s: Cannot find authenticity token in response", loginUrlToUse)
 	}
 
 	csrfToken = match[1]
@@ -169,17 +188,17 @@ func getLoginForm(client *http.Client) (csrfToken []byte, err error) {
 	return csrfToken, nil
 }
 
-// postLoginForm submits the login request and decoartes the given client (via its cookie jar) with authentication
-func postLoginForm(client *http.Client, csrfToken []byte, username, password string) error {
+// postLoginForm submits the login request and decorates the given client (via its cookie jar) with authentication
+func postLoginForm(client *http.Client, csrfToken []byte, username, password, loginUrlToUse string) error {
 	data := url.Values{}
 	data.Set("authenticity_token", string(csrfToken))
 	data.Set("utf8", "✓")
 	data.Set("user[login]", username)
 	data.Set("user[password]", password)
 	data.Set("user[remember_me]", "0")
-	res, err := client.PostForm(LoginURL, data)
+	res, err := client.PostForm(loginUrlToUse, data)
 	if err != nil {
-		return fmt.Errorf("POST %s Error: %w", LoginURL, err)
+		return fmt.Errorf("POST %s Error: %w", loginUrlToUse, err)
 	}
 
 	// TODO: Detect login failure
@@ -234,4 +253,20 @@ func nthChild(n *html.Node, index int) *html.Node {
 		}
 	}
 	return c
+}
+
+func determineBaseUrlToUse(hostname string) (baseUrlToUse string, err error) {
+	if hostname == "" {
+		return BaseURL, nil
+	}
+	
+	return "https://" + hostname, nil
+}
+
+func determineLoginUrlToUse(hostname string) (loginUrlToUse string, err error) {
+	if hostname == "" {
+		return LoginURL, nil
+	}
+	
+	return "https://" + hostname + "/login", nil
 }

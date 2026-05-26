@@ -1,4 +1,4 @@
-module github.com/meagar/himama-dl
+module github.com/NomadTechSeth/lillio-himama-dl-continued
 
 go 1.17
 

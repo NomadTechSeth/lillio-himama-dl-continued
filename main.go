@@ -13,19 +13,19 @@ import (
 	"sync/atomic"
 	"regexp"
 
-	"github.com/meagar/himama-dl/internal/himama"
+	"github.com/NomadTechSeth/lillio-himama-dl-continued/internal/himama"
 )
 
 func main() {
 	fmt.Println("himama-dl v0.0.3")
 
-	username, password, err := fetchCredentials()
+	username, password, hostname, err := fetchParameters()
 	if err != nil {
-		fmt.Println("Error colleting credentials:", err)
+		fmt.Println("Error collecting paramters:", err)
 		return
 	}
-
-	client, err := himama.NewClient(username, password)
+	
+	client, err := himama.NewClient(username, password, hostname)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
@@ -52,9 +52,10 @@ func main() {
 	fmt.Printf("Total: %d\nDownloaded %d\nAlready Downloaded: %d\n", total, completed, skipped)
 }
 
-func fetchCredentials() (username string, password string, err error) {
+func fetchParameters() (username string, password string, hostname string, err error) {
 	flag.StringVar(&username, "username", "", "HiMama username (ie, your email)")
 	flag.StringVar(&password, "password", "", "HiMama password")
+	flag.StringVar(&hostname, "hostname", "", "Childcare portal base hostname (ie, their Lillio/HiMama tenant, like www.himama.com)")
 	flag.Parse()
 
 	if username == "" {
@@ -69,6 +70,13 @@ func fetchCredentials() (username string, password string, err error) {
 		scanner := bufio.NewScanner(os.Stdin)
 		scanner.Scan()
 		password = scanner.Text()
+	}
+
+	if hostname == "" {
+		fmt.Print("Hostname (Default: ", himama.DefaultHost, ") : ")
+		scanner := bufio.NewScanner(os.Stdin)
+		scanner.Scan()
+		hostname = scanner.Text()
 	}
 
 	return
@@ -131,7 +139,7 @@ func download(srcURL, destPath string) {
 	}
 }
 
-// Scraps the activity index pages
+// Scrapes the activity index pages
 // Returns a channel over which activity media links (ie links to S3 objects) are sent
 func scrapeActivities(client *himama.Client, child himama.Child) <-chan himama.Activity {
 	work := make(chan himama.Activity, 2000)
@@ -178,16 +186,14 @@ func selectChildren(children []himama.Child) ([]himama.Child, error) {
 		return nil, fmt.Errorf("no children found")
 	}
 
-	//  single child codepath errors, so use multi-child codepath instead
-	
-	//if len(children) == 1 {
-	//	fmt.Println("Found 1 child:")
-	//	fmt.Printf("%s (%s)\n", children[0].Name, children[0].ID)
-	//	fmt.Printf("Press return to continue")
-	//	fmt.Scan()
-	//	return nil, fmt.Errorf("TODO: Impmement single child download")
-	//}
+	//  single child
+	if len(children) == 1 {
+		fmt.Println("Found 1 child:")
+		fmt.Printf("%s (%s)\n", children[0].Name, children[0].ID)
+		return []himama.Child{children[0]}, nil
+	}
 
+	//	multiple children
 	var choice int
 	for {
 		fmt.Println("Found multiple children. Which account to scrape?")
@@ -200,6 +206,8 @@ func selectChildren(children []himama.Child) ([]himama.Child, error) {
 			break
 		}
 	}
+
+	//	it would be nice to parameterize selection of All to assist in scripting functionality
 
 	if choice == len(children)+1 {
 		return children, nil
