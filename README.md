@@ -4,6 +4,9 @@ This project will attempt to continue maintaining this useful bulk downloader fo
 
 Thanks to meagar for building and maintaining this project for as long as he did and others' previous efforts at maintaining it through Lillio changes.  It has made keeping important memories from our childrens' development easier since Lillio has never seemed to offer a data export/takeout feature.
 
+Disclaimer:
+My development background is in Java, Spring, C#, .NET and scripting in bash and Powershell.  Go is completely foreign to me and this is my first experience with it!
+
 Original project github:
 https://github.com/meagar/himama-dl
 
